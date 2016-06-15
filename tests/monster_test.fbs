@@ -12,7 +12,7 @@ union Any { Monster, TestSimpleTableWithEnum }  // TODO: add more elements
 
 struct Test { a:short; b:byte; }
 
-table TestSimpleTableWithEnum {
+table TestSimpleTableWithEnum (csharp_partial) {
   color: Color = Green;
 }
 
@@ -31,6 +31,7 @@ table Stat {
   count:ushort;
 }
 
+/// an example documentation comment: monster object
 table Monster {
   pos:Vec3 (id: 0);
   hp:short = 100 (id: 2);
@@ -58,6 +59,14 @@ table Monster {
   testhashu32_fnv1a:uint (id:21, hash:"fnv1a_32");
   testhashs64_fnv1a:long (id:22, hash:"fnv1a_64");
   testhashu64_fnv1a:ulong (id:23, hash:"fnv1a_64");
+  testf:float = 3.14159 (id:25);
+  testf2:float = 3 (id:26);
+  testf3:float (id:27);
+}
+
+rpc_service MonsterStorage {
+  Store(Monster):Stat (stream);
+  Retrieve(Stat):Monster (idempotent);
 }
 
 root_type Monster;

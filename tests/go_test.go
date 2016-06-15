@@ -70,10 +70,10 @@ func TestAll(t *testing.T) {
 
 	// Verify that panics are raised during exceptional conditions:
 	CheckNotInObjectError(t.Fatalf)
-	CheckObjectIsNestedError(t.Fatalf)
 	CheckStringIsNestedError(t.Fatalf)
 	CheckByteStringIsNestedError(t.Fatalf)
 	CheckStructIsNotInlineError(t.Fatalf)
+	CheckFinishedBytesError(t.Fatalf)
 
 	// Verify that using the generated Go code builds a buffer without
 	// returning errors:
@@ -201,10 +201,6 @@ func CheckReadBuffer(buf []byte, offset flatbuffers.UOffsetT, fail func(string, 
 
 	if got := monster.TestType(); example.AnyMonster != got {
 		fail(FailString("monster.TestType()", example.AnyMonster, got))
-	}
-
-	if unionType := monster.TestType(); unionType != example.AnyMonster {
-		fail("monster.TestType()")
 	}
 
 	// initialize a Table from a union field Test(...)
@@ -372,7 +368,7 @@ func checkFuzz(fuzzFields, fuzzObjects int, fail func(string, ...interface{})) {
 
 		for j := 0; j < fuzzFields; j++ {
 			f := flatbuffers.VOffsetT((flatbuffers.VtableMetadataFields + j) * flatbuffers.SizeVOffsetT)
-			choice := int(l.Next()) % testValuesMax
+			choice := l.Next() % uint32(testValuesMax)
 
 			switch choice {
 			case 0:
@@ -1117,20 +1113,6 @@ func CheckNotInObjectError(fail func(string, ...interface{})) {
 	b.EndObject()
 }
 
-// CheckObjectIsNestedError verifies that an object can not be created inside
-// another object.
-func CheckObjectIsNestedError(fail func(string, ...interface{})) {
-	b := flatbuffers.NewBuilder(0)
-	b.StartObject(0)
-	defer func() {
-		r := recover()
-		if r == nil {
-			fail("expected panic in CheckObjectIsNestedError")
-		}
-	}()
-	b.StartObject(0)
-}
-
 // CheckStringIsNestedError verifies that a string can not be created inside
 // another object.
 func CheckStringIsNestedError(fail func(string, ...interface{})) {
@@ -1171,6 +1153,20 @@ func CheckStructIsNotInlineError(fail func(string, ...interface{})) {
 		}
 	}()
 	b.PrependStructSlot(0, 1, 0)
+}
+
+// CheckFinishedBytesError verifies that `FinishedBytes` panics if the table
+// is not finished.
+func CheckFinishedBytesError(fail func(string, ...interface{})) {
+	b := flatbuffers.NewBuilder(0)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			fail("expected panic in CheckFinishedBytesError")
+		}
+	}()
+	b.FinishedBytes()
 }
 
 // CheckDocExample checks that the code given in FlatBuffers documentation
