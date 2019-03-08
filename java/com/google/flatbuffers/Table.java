@@ -19,11 +19,7 @@ package com.google.flatbuffers;
 import static com.google.flatbuffers.Constants.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CoderResult;
 
 /// @cond FLATBUFFERS_INTERNAL
 
@@ -31,17 +27,21 @@ import java.nio.charset.CoderResult;
  * All tables in the generated code derive from this class, and add their own accessors.
  */
 public class Table {
-  private final static ThreadLocal<CharsetDecoder> UTF8_DECODER = new ThreadLocal<CharsetDecoder>() {
+  public final static ThreadLocal<Charset> UTF8_CHARSET = new ThreadLocal<Charset>() {
     @Override
-    protected CharsetDecoder initialValue() {
-      return Charset.forName("UTF-8").newDecoder();
+    protected Charset initialValue() {
+      return Charset.forName("UTF-8");
     }
   };
-  private final static ThreadLocal<CharBuffer> CHAR_BUFFER = new ThreadLocal<CharBuffer>();
   /** Used to hold the position of the `bb` buffer. */
   protected int bb_pos;
   /** The underlying ByteBuffer to hold the data of the Table. */
   protected ByteBuffer bb;
+  /** Used to hold the vtable position. */
+  protected int vtable_start;
+  /** Used to hold the vtable size. */
+  protected int vtable_size;
+  Utf8 utf8 = Utf8.getDefault();
 
   /**
    * Get the underlying ByteBuffer.
@@ -57,8 +57,12 @@ public class Table {
    * @return Returns an offset into the object, or `0` if the field is not present.
    */
   protected int __offset(int vtable_offset) {
-    int vtable = bb_pos - bb.getInt(bb_pos);
-    return vtable_offset < bb.getShort(vtable) ? bb.getShort(vtable + vtable_offset) : 0;
+    return vtable_offset < vtable_size ? bb.getShort(vtable_start + vtable_offset) : 0;
+  }
+
+  protected static int __offset(int vtable_offset, int offset, ByteBuffer bb) {
+    int vtable = bb.capacity() - offset;
+    return bb.getShort(vtable + vtable_offset - bb.getInt(vtable)) + vtable;
   }
 
   /**
@@ -68,6 +72,10 @@ public class Table {
    * @return Returns the relative offset stored at `offset`.
    */
   protected int __indirect(int offset) {
+    return offset + bb.getInt(offset);
+  }
+
+  protected static int __indirect(int offset, ByteBuffer bb) {
     return offset + bb.getInt(offset);
   }
 
@@ -83,34 +91,9 @@ public class Table {
    * @return Returns a `String` from the data stored inside the FlatBuffer at `offset`.
    */
   protected String __string(int offset) {
-    CharsetDecoder decoder = UTF8_DECODER.get();
-    decoder.reset();
-
     offset += bb.getInt(offset);
-    ByteBuffer src = bb.duplicate().order(ByteOrder.LITTLE_ENDIAN);
-    int length = src.getInt(offset);
-    src.position(offset + SIZEOF_INT);
-    src.limit(offset + SIZEOF_INT + length);
-
-    int required = (int)((float)length * decoder.maxCharsPerByte());
-    CharBuffer dst = CHAR_BUFFER.get();
-    if (dst == null || dst.capacity() < required) {
-      dst = CharBuffer.allocate(required);
-      CHAR_BUFFER.set(dst);
-    }
-
-    dst.clear();
-
-    try {
-      CoderResult cr = decoder.decode(src, dst, true);
-      if (!cr.isUnderflow()) {
-        cr.throwException();
-      }
-    } catch (CharacterCodingException x) {
-      throw new Error(x);
-    }
-
-    return dst.flip().toString();
+    int length = bb.getInt(offset);
+    return utf8.decodeUtf8(bb, offset + SIZEOF_INT, length);
   }
 
   /**
@@ -158,6 +141,27 @@ public class Table {
   }
 
   /**
+   * Initialize vector as a ByteBuffer.
+   *
+   * This is more efficient than using duplicate, since it doesn't copy the data
+   * nor allocattes a new {@link ByteBuffer}, creating no garbage to be collected.
+   *
+   * @param bb The {@link ByteBuffer} for the array
+   * @param vector_offset The position of the vector in the byte buffer
+   * @param elem_size The size of each element in the array
+   * @return The {@link ByteBuffer} for the array
+   */
+  protected ByteBuffer __vector_in_bytebuffer(ByteBuffer bb, int vector_offset, int elem_size) {
+    int o = this.__offset(vector_offset);
+    if (o == 0) return null;
+    int vectorstart = __vector(o);
+    bb.rewind();
+    bb.limit(vectorstart + __vector_len(o) * elem_size);
+    bb.position(vectorstart);
+    return bb;
+  }
+
+  /**
    * Initialize any Table-derived type to point to the union at the given `offset`.
    *
    * @param t A `Table`-derived type that should point to the union at `offset`.
@@ -168,6 +172,8 @@ public class Table {
     offset += bb_pos;
     t.bb_pos = offset + bb.getInt(offset);
     t.bb = bb;
+    t.vtable_start = t.bb_pos - bb.getInt(t.bb_pos);
+    t.vtable_size = bb.getShort(t.vtable_start);
     return t;
   }
 
@@ -187,6 +193,88 @@ public class Table {
       if (ident.charAt(i) != (char)bb.get(bb.position() + SIZEOF_INT + i)) return false;
     }
     return true;
+  }
+
+  /**
+   * Sort tables by the key.
+   *
+   * @param offsets An 'int' indexes of the tables into the bb.
+   * @param bb A {@code ByteBuffer} to get the tables.
+   */
+  protected void sortTables(int[] offsets, final ByteBuffer bb) {
+    Integer[] off = new Integer[offsets.length];
+    for (int i = 0; i < offsets.length; i++) off[i] = offsets[i];
+    java.util.Arrays.sort(off, new java.util.Comparator<Integer>() {
+      public int compare(Integer o1, Integer o2) {
+        return keysCompare(o1, o2, bb);
+      }
+    });
+    for (int i = 0; i < offsets.length; i++) offsets[i] = off[i];
+  }
+
+  /**
+   * Compare two tables by the key.
+   *
+   * @param o1 An 'Integer' index of the first key into the bb.
+   * @param o2 An 'Integer' index of the second key into the bb.
+   * @param bb A {@code ByteBuffer} to get the keys.
+   */
+  protected int keysCompare(Integer o1, Integer o2, ByteBuffer bb) { return 0; }
+
+  /**
+   * Compare two strings in the buffer.
+   *
+   * @param offset_1 An 'int' index of the first string into the bb.
+   * @param offset_2 An 'int' index of the second string into the bb.
+   * @param bb A {@code ByteBuffer} to get the strings.
+   */
+  protected static int compareStrings(int offset_1, int offset_2, ByteBuffer bb) {
+    offset_1 += bb.getInt(offset_1);
+    offset_2 += bb.getInt(offset_2);
+    int len_1 = bb.getInt(offset_1);
+    int len_2 = bb.getInt(offset_2);
+    int startPos_1 = offset_1 + SIZEOF_INT;
+    int startPos_2 = offset_2 + SIZEOF_INT;
+    int len = Math.min(len_1, len_2);
+    for(int i = 0; i < len; i++) {
+      if (bb.get(i + startPos_1) != bb.get(i + startPos_2))
+        return bb.get(i + startPos_1) - bb.get(i + startPos_2);
+    }
+    return len_1 - len_2;
+  }
+
+  /**
+   * Compare string from the buffer with the 'String' object.
+   *
+   * @param offset_1 An 'int' index of the first string into the bb.
+   * @param key Second string as a byte array.
+   * @param bb A {@code ByteBuffer} to get the first string.
+   */
+  protected static int compareStrings(int offset_1, byte[] key, ByteBuffer bb) {
+    offset_1 += bb.getInt(offset_1);
+    int len_1 = bb.getInt(offset_1);
+    int len_2 = key.length;
+    int startPos_1 = offset_1 + Constants.SIZEOF_INT;
+    int len = Math.min(len_1, len_2);
+    for (int i = 0; i < len; i++) {
+      if (bb.get(i + startPos_1) != key[i])
+        return bb.get(i + startPos_1) - key[i];
+    }
+    return len_1 - len_2;
+  }
+
+  /**
+   * Resets the internal state with a null {@code ByteBuffer} and a zero position.
+   *
+   * This method exists primarily to allow recycling Table instances without risking memory leaks
+   * due to {@code ByteBuffer} references. The instance will be unusable until it is assigned
+   * again to a {@code ByteBuffer}.
+   */
+  public void __reset() {
+    bb = null;
+    bb_pos = 0;
+    vtable_start = 0;
+    vtable_size = 0;
   }
 }
 

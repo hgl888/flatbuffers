@@ -2,17 +2,20 @@
 
 /**
  * @const
-*/
+ * @namespace
+ */
 var NamespaceA = NamespaceA || {};
 
 /**
  * @const
-*/
+ * @namespace
+ */
 NamespaceA.NamespaceB = NamespaceA.NamespaceB || {};
 
 /**
  * @const
-*/
+ * @namespace
+ */
 var NamespaceC = NamespaceC || {};
 
 /**
@@ -52,7 +55,7 @@ NamespaceA.TableInFirstNS.getRootAsTableInFirstNS = function(bb, obj) {
 
 /**
  * @param {NamespaceA.NamespaceB.TableInNestedNS=} obj
- * @returns {NamespaceA.NamespaceB.TableInNestedNS}
+ * @returns {NamespaceA.NamespaceB.TableInNestedNS|null}
  */
 NamespaceA.TableInFirstNS.prototype.fooTable = function(obj) {
   var offset = this.bb.__offset(this.bb_pos, 4);
@@ -68,8 +71,23 @@ NamespaceA.TableInFirstNS.prototype.fooEnum = function() {
 };
 
 /**
+ * @param {NamespaceA.NamespaceB.EnumInNestedNS} value
+ * @returns {boolean}
+ */
+NamespaceA.TableInFirstNS.prototype.mutate_foo_enum = function(value) {
+  var offset = this.bb.__offset(this.bb_pos, 6);
+
+  if (offset === 0) {
+    return false;
+  }
+
+  this.bb.writeInt8(this.bb_pos + offset, value);
+  return true;
+};
+
+/**
  * @param {NamespaceA.NamespaceB.StructInNestedNS=} obj
- * @returns {NamespaceA.NamespaceB.StructInNestedNS}
+ * @returns {NamespaceA.NamespaceB.StructInNestedNS|null}
  */
 NamespaceA.TableInFirstNS.prototype.fooStruct = function(obj) {
   var offset = this.bb.__offset(this.bb_pos, 8);
@@ -117,6 +135,21 @@ NamespaceA.TableInFirstNS.endTableInFirstNS = function(builder) {
 };
 
 /**
+ * @param {flatbuffers.Builder} builder
+ * @param {flatbuffers.Offset} fooTableOffset
+ * @param {NS8755221360535654258.NamespaceA.NamespaceB.EnumInNestedNS} fooEnum
+ * @param {flatbuffers.Offset} fooStructOffset
+ * @returns {flatbuffers.Offset}
+ */
+NamespaceA.TableInFirstNS.createTableInFirstNS = function(builder, fooTableOffset, fooEnum, fooStructOffset) {
+  NamespaceA.TableInFirstNS.startTableInFirstNS(builder);
+  NamespaceA.TableInFirstNS.addFooTable(builder, fooTableOffset);
+  NamespaceA.TableInFirstNS.addFooEnum(builder, fooEnum);
+  NamespaceA.TableInFirstNS.addFooStruct(builder, fooStructOffset);
+  return NamespaceA.TableInFirstNS.endTableInFirstNS(builder);
+}
+
+/**
  * @constructor
  */
 NamespaceC.TableInC = function() {
@@ -153,7 +186,7 @@ NamespaceC.TableInC.getRootAsTableInC = function(bb, obj) {
 
 /**
  * @param {NamespaceA.TableInFirstNS=} obj
- * @returns {NamespaceA.TableInFirstNS}
+ * @returns {NamespaceA.TableInFirstNS|null}
  */
 NamespaceC.TableInC.prototype.referToA1 = function(obj) {
   var offset = this.bb.__offset(this.bb_pos, 4);
@@ -162,7 +195,7 @@ NamespaceC.TableInC.prototype.referToA1 = function(obj) {
 
 /**
  * @param {NamespaceA.SecondTableInA=} obj
- * @returns {NamespaceA.SecondTableInA}
+ * @returns {NamespaceA.SecondTableInA|null}
  */
 NamespaceC.TableInC.prototype.referToA2 = function(obj) {
   var offset = this.bb.__offset(this.bb_pos, 6);
@@ -202,6 +235,19 @@ NamespaceC.TableInC.endTableInC = function(builder) {
 };
 
 /**
+ * @param {flatbuffers.Builder} builder
+ * @param {flatbuffers.Offset} referToA1Offset
+ * @param {flatbuffers.Offset} referToA2Offset
+ * @returns {flatbuffers.Offset}
+ */
+NamespaceC.TableInC.createTableInC = function(builder, referToA1Offset, referToA2Offset) {
+  NamespaceC.TableInC.startTableInC(builder);
+  NamespaceC.TableInC.addReferToA1(builder, referToA1Offset);
+  NamespaceC.TableInC.addReferToA2(builder, referToA2Offset);
+  return NamespaceC.TableInC.endTableInC(builder);
+}
+
+/**
  * @constructor
  */
 NamespaceA.SecondTableInA = function() {
@@ -238,7 +284,7 @@ NamespaceA.SecondTableInA.getRootAsSecondTableInA = function(bb, obj) {
 
 /**
  * @param {NamespaceC.TableInC=} obj
- * @returns {NamespaceC.TableInC}
+ * @returns {NamespaceC.TableInC|null}
  */
 NamespaceA.SecondTableInA.prototype.referToC = function(obj) {
   var offset = this.bb.__offset(this.bb_pos, 4);
@@ -268,6 +314,17 @@ NamespaceA.SecondTableInA.endSecondTableInA = function(builder) {
   var offset = builder.endObject();
   return offset;
 };
+
+/**
+ * @param {flatbuffers.Builder} builder
+ * @param {flatbuffers.Offset} referToCOffset
+ * @returns {flatbuffers.Offset}
+ */
+NamespaceA.SecondTableInA.createSecondTableInA = function(builder, referToCOffset) {
+  NamespaceA.SecondTableInA.startSecondTableInA(builder);
+  NamespaceA.SecondTableInA.addReferToC(builder, referToCOffset);
+  return NamespaceA.SecondTableInA.endSecondTableInA(builder);
+}
 
 // Exports for Node.js and RequireJS
 this.NamespaceA = NamespaceA;

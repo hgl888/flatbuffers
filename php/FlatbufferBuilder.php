@@ -21,7 +21,7 @@
 
 namespace Google\FlatBuffers;
 
-class FlatbufferBuilder
+final class FlatbufferBuilder
 {
     /**
      * Internal ByteBuffer for the FlatBuffer data.
@@ -233,7 +233,7 @@ class FlatbufferBuilder
     public function putUint($x)
     {
         if ($x > PHP_INT_MAX) {
-            throw new \InvalidArgumentException("your platform can't handling uint correctly. use 64bit machine.");
+            throw new \InvalidArgumentException("your platform can't handle uint correctly. use 64bit machine.");
         }
 
         $this->bb->putUint($this->space -= 4, $x);
@@ -245,7 +245,7 @@ class FlatbufferBuilder
     public function putLong($x)
     {
         if ($x > PHP_INT_MAX) {
-            throw new \InvalidArgumentException("your platform can't handling long correctly. use 64bit machine.");
+            throw new \InvalidArgumentException("Your platform can't handle long correctly. Use a 64bit machine.");
         }
 
         $this->bb->putLong($this->space -= 8, $x);
@@ -257,7 +257,7 @@ class FlatbufferBuilder
     public function putUlong($x)
     {
         if ($x > PHP_INT_MAX) {
-            throw new \InvalidArgumentException("your platform can't handling ulong correctly. this is php limitations. please wait extension release.");
+            throw new \InvalidArgumentException("Your platform can't handle ulong correctly. This is a php limitation. Please wait for the extension release.");
         }
 
         $this->bb->putUlong($this->space -= 8, $x);
@@ -277,6 +277,15 @@ class FlatbufferBuilder
     public function putDouble($x)
     {
         $this->bb->putDouble($this->space -= 8, $x);
+    }
+
+    /**
+     * @param $off
+     */
+    public function putOffset($off)
+    {
+        $new_off = $this->offset() - $off + Constants::SIZEOF_INT;
+        $this->putInt($new_off);
     }
     /// @endcond
 
@@ -562,9 +571,7 @@ class FlatbufferBuilder
         if ($off > $this->offset()) {
             throw new \Exception("");
         }
-
-        $off = $this->offset() - $off + Constants::SIZEOF_INT;
-        $this->putInt($off);
+        $this->putOffset($off);
     }
 
     /// @cond FLATBUFFERS_INTERNAL
@@ -593,6 +600,10 @@ class FlatbufferBuilder
 
     protected function is_utf8($bytes)
     {
+        if (function_exists('mb_detect_encoding')) {
+            return (bool) mb_detect_encoding($bytes, 'UTF-8', true);
+        }
+
         $len = strlen($bytes);
         if ($len < 1) {
             /* NOTE: always return 1 when passed string is null */
@@ -808,14 +819,18 @@ class FlatbufferBuilder
         $this->addInt(0);
         $vtableloc = $this->offset();
 
-        for ($i = $this->vtable_in_use -1; $i >= 0; $i--) {
+        $i = $this->vtable_in_use -1;
+        // Trim trailing zeroes.
+        for (; $i >= 0 && $this->vtable[$i] == 0; $i--) {}
+        $trimmed_size = $i + 1;
+        for (; $i >= 0; $i--) {
             $off = ($this->vtable[$i] != 0) ? $vtableloc - $this->vtable[$i] : 0;
             $this->addShort($off);
         }
 
         $standard_fields = 2; // the fields below
         $this->addShort($vtableloc - $this->object_start);
-        $this->addShort(($this->vtable_in_use + $standard_fields) * Constants::SIZEOF_SHORT);
+        $this->addShort(($trimmed_size + $standard_fields) * Constants::SIZEOF_SHORT);
 
         // search for an existing vtable that matches the current one.
         $existing_vtable = 0;
